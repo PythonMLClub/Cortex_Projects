@@ -1,0 +1,92 @@
+
+SELECT SNOWFLAKE.CORTEX.COMPLETE('snowflake-arctic', 'What are large language models?');
+
+---------------------------------Generating a JWT Token Using snowsql-----------------------------------
+JWT:
+snowsql -a POB19930 -u CORTEXTOKEN --private-key-path C:/Users/User/Documents/JWT_TOKEN/rsa_key.p8 --generate-jwt
+
+
+---------------------------------------Check PostMan------------------------------------------
+
+Call URL:
+https://POB19930.snowflakecomputing.com/api/v2/cortex/inference:complete
+
+Header:
+"Content-Type"                         : "application/json",
+"X-Snowflake-Authorization-Token-Type" :"KEYPAIR_JWT"
+
+Body:
+{
+  "model": "snowflake-arctic",
+  "messages": [
+    {
+      "content": "What are large language models?"
+    }
+  ],
+  "stream": true,
+  "temperature": 0,
+  "top_p": 1,
+  "max_tokens": 4096
+}
+
+
+
+****************************************************************************************************************************************************
+output:
+
+
+{
+  "model": "llama2-70b-chat",
+  "messages": [
+    {
+      "content": "What are large language models?"
+    }
+  ],
+  "stream": true,
+  "temperature": 0,
+  "top_p": 1,
+  "max_tokens": 4096
+}
+
+{
+  "model": "snowflake-arctic",
+  "messages": [
+    {
+      "content": "What are large language models?"
+    }
+  ],
+  "stream": true,
+  "temperature": 0,
+  "top_p": 1,
+  "max_tokens": 4096
+}
+
+
+{
+  "model": "mistral-large",
+  "messages": [
+    {
+      "content": "What are large language models?"
+    }
+  ],
+  "stream": true,
+  "temperature": 0,
+  "top_p": 1,
+  "max_tokens": 4096
+}
+
+{
+  "model": "mistral-7b",
+  "messages": [
+    {
+      "content": "What are large language models?"
+    }
+  ],
+  "stream": true,
+  "temperature": 0,
+  "top_p": 1,
+  "max_tokens": 4096
+}
+
+
+

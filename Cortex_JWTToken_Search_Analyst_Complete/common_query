@@ -1,0 +1,67 @@
+----------------------User Role Configuration for Secure Access----------------
+
+-- Granting a role to a user
+USE ROLE accountadmin;
+GRANT ROLE accountadmin TO USER CORTEXTOKEN;
+
+---------------------------Database and Schema Setup----------------------------
+
+-- Creating a new database and schema
+CREATE OR REPLACE DATABASE CORTEX_TOKEN_DB;
+CREATE OR REPLACE SCHEMA CORTEX_TOKEN_SCHEMA;
+
+--------------------------Warehouse Provisioning and Configuration--------------
+
+-- Creating a virtual warehouse with specific configurations
+CREATE OR REPLACE WAREHOUSE COMPUTE_WH 
+    WAREHOUSE_SIZE = 'X-SMALL'
+    AUTO_SUSPEND = 120
+    AUTO_RESUME = TRUE
+    INITIALLY_SUSPENDED = TRUE;
+
+---------------------------Stage Creation for Data Loading-----------------------
+
+-- Creating an internal stage with encryption and directory support enabled for cortex_search
+CREATE OR REPLACE STAGE CORTEX_SEARCH_STAGE
+    DIRECTORY = (ENABLE = TRUE)
+    ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE');
+
+-- Creating an internal stage with encryption and directory support enabled for cortex_analyst
+CREATE OR REPLACE STAGE CORTEX_ANALYST_STAGE
+    DIRECTORY = (ENABLE = TRUE)
+    ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE');
+
+--------------Granting Privileges for Database ,Schema ,Warehouse ,Stage and Cortex Search Serivce Operations----------
+-- Granting privileges to create databases and warehouses
+GRANT CREATE DATABASE ON ACCOUNT TO ROLE accountadmin;
+GRANT CREATE WAREHOUSE ON ACCOUNT TO ROLE accountadmin;
+
+-- Grant Usage on Database
+GRANT USAGE ON DATABASE CORTEX_TOKEN_DB TO ROLE ACCOUNTADMIN;
+
+-- Grant Usage on Schema
+GRANT USAGE ON SCHEMA CORTEX_TOKEN_DB.CORTEX_TOKEN_SCHEMA TO ROLE ACCOUNTADMIN;
+
+-- Grant Usage on Warehouse
+GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE ACCOUNTADMIN;
+
+-- Grant Usage and Read Access on the Stage
+GRANT READ ON STAGE CORTEX_SEARCH_STAGE TO ROLE ACCOUNTADMIN;
+
+-- Grant Usage on the Cortex Search Service (if needed)
+GRANT USAGE ON CORTEX SEARCH SERVICE PDF_CHUNK_SERVICE TO ROLE ACCOUNTADMIN;
+
+--------------------Listing and Managing Files in Snowflake Stages--------------
+
+-- Listing files in the specified stage
+LIST @CORTEX_SEARCH_STAGE;
+
+LIST @CORTEX_ANALYST_STAGE;
+
+
+----------------------Enable For Coretx Analyst---------------------------------
+
+ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';  -- for cortex analyst
+
+
+

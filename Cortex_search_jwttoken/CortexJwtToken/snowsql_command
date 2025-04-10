@@ -1,0 +1,12 @@
+private : openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
+
+public : openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
+
+openssl rsa -in C:\Users\User\Documents\JWT_TOKEN\rsa_key.p8 -check
+
+snowsql -a akb21464 -u CORTEXSEARCHTOKEN
+
+use role account admin;
+
+snowsql -a akb21464 -u CORTEXSEARCHTOKEN --private-key-path C:/Users/User/Documents/JWT_TOKEN/rsa_key.p8 --generate-jwt
+

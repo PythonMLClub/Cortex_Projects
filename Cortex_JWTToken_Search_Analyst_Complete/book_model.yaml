@@ -1,0 +1,64 @@
+name: ScientificBooksModel
+description: A semantic model for analyzing scientific books, focusing on book titles, authors, descriptions, categories, publishers, and pricing. This model enables detailed analysis of book categories, pricing trends, and publication details.
+
+tables:
+  - name: scientific_books
+    description: Core table containing details about scientific books, including titles, authors, descriptions, categories, publishers, and pricing.
+    base_table:
+      database: CORTEX_TOKEN_DB
+      schema: CORTEX_TOKEN_SCHEMA
+      table: MEDICAL_BOOKS
+
+    # Time dimensions (adjusting based on the current structure of your date columns)
+    time_dimensions:
+      - name: publish_year
+        description: "The year the book was published"
+        expr: PUBLISH_DATE_YEAR  # Use the PUBLISH_DATE_YEAR column directly
+        data_type: integer
+
+      - name: publish_month
+        description: "The month the book was published"
+        expr: PUBLISH_DATE_MONTH  # Use the PUBLISH_DATE_MONTH column directly
+        data_type: integer
+
+    # Dimensions: Categorical fields used for grouping data
+    dimensions:
+      - name: title
+        description: "Title of the scientific book"
+        expr: TITLE
+        data_type: string
+
+      - name: authors
+        description: "Authors of the scientific book"
+        expr: AUTHORS
+        data_type: string
+
+      - name: category
+        description: "Category of the scientific book"
+        expr: CATEGORY
+        data_type: string
+
+      - name: publisher
+        description: "Publisher of the scientific book"
+        expr: PUBLISHER
+        data_type: string
+
+    # Measures: Aggregated numerical fields used for analysis
+    measures:
+      - name: total_books
+        description: "Total number of books in the dataset"
+        expr: TITLE
+        default_aggregation: count
+        data_type: integer
+
+      - name: average_price
+        description: "Average price of scientific books"
+        expr: PRICE_STARTING_WITH  # Use the correct price column
+        default_aggregation: avg
+        data_type: float
+
+      - name: total_revenue
+        description: "Total revenue from all scientific books"
+        expr: PRICE_STARTING_WITH  # Use the correct price column
+        default_aggregation: sum
+        data_type: float

@@ -1,0 +1,173 @@
+name: property_ca
+tables:
+  - name: PROPERTY_DATA_VIEW
+    base_table:
+      database: CORTEX_AGENT_DB
+      schema: CORTEX_AGENT_SCHEMA
+      table: PROPERTY_DATA_VIEW
+    dimensions:
+      - name: PROPERTYTYPE
+        expr: PROPERTYTYPE
+        data_type: VARCHAR(16777216)
+        description: 'Type of property, categorized into three groups: 10.0 (residential), 50.0 (commercial), and 70.0 (industrial).'
+        sample_values:
+          - '10.0'
+          - '50.0'
+          - '70.0'
+        synonyms:
+          - property_category
+          - asset_type
+          - real_estate_type
+          - land_use_category
+          - property_classification
+      - name: STATE
+        expr: STATE
+        data_type: VARCHAR(16777216)
+        description: State in which the property is located.
+        sample_values:
+          - NY
+          - TN
+          - PA
+        synonyms:
+          - province
+          - region
+          - territory
+          - area
+          - location
+          - jurisdiction
+          - district
+          - county
+      - name: LANDUSECODE
+        expr: LANDUSECODE
+        data_type: VARCHAR(16777216)
+        description: Land use code categorizing the property into different land use types, such as residential, commercial, industrial, etc.
+        sample_values:
+          - '137.0'
+          - '100.0'
+          - '600.0'
+        synonyms:
+          - land_use_category
+          - land_use_type
+          - property_use_code
+          - zoning_code
+          - land_classification
+          - land_designation
+          - property_type_code
+      - name: IS_AGRICULTURAL_LAND
+        expr: CASE WHEN LANDUSECODE IN ('137.0', '200.0') THEN 'Yes' ELSE 'No' END
+        data_type: VARCHAR(3)
+      - name: UNIQUE_AGRICULTURAL_RECORDS
+        expr: COUNT(DISTINCT PRIMARYADDRESS) FILTER(WHERE LANDUSECODE IN ('137.0', '200.0'))
+        data_type: INTEGER
+      - name: PRIMARYADDRESS
+        expr: PRIMARYADDRESS
+        data_type: VARCHAR(16777216)
+        description: The primary address of a property, which may include a street address, route, or other location identifier.
+        sample_values:
+          - 1262 HARRIS HOLLOW RD
+          - ST RT 116
+          - 300 S WASHINGTON ST
+        synonyms:
+          - main_address
+          - primary_location
+          - home_address
+          - residential_address
+          - mailing_address
+          - street_address
+          - physical_address
+      - name: PRIMARYCITY
+        expr: PRIMARYCITY
+        data_type: VARCHAR(16777216)
+        description: 'The city where the property is primarily located, which can be one of the following: GERRY, HARRIMAN, or MUNCY.'
+        sample_values:
+          - GERRY
+          - HARRIMAN
+          - MUNCY
+        synonyms:
+          - main_city
+          - city_of_primary_address
+          - primary_location_city
+          - hometown
+          - city_of_record
+      - name: PRIMARYZIP
+        expr: PRIMARYZIP
+        data_type: VARCHAR(16777216)
+        description: The primary zip code associated with a property.
+        sample_values:
+          - '147409515'
+          - '37748'
+          - '177561504'
+        synonyms:
+          - postal_code
+          - zip_code
+          - main_zip
+          - primary_postal_code
+          - main_postal_code
+      - name: ACRESIZE
+        expr: TRY_CAST(NULLIF(ACRESIZE, '') AS FLOAT)
+        data_type: FLOAT
+        description: Size of the property in acres, ensuring empty strings are handled correctly.
+        sample_values:
+          - '1.0'
+          - '0.17'
+          - '0.3583'
+        synonyms:
+          - land_size
+          - lot_size
+          - property_size
+          - area_size
+          - square_footage
+          - land_area
+          - plot_size
+      - name: OWNERNAME
+        expr: OWNERNAME
+        data_type: VARCHAR(16777216)
+        description: The name of the property owner.
+        sample_values:
+          - DOUD GREGORY
+          - BUNCH LOGAN RAY
+          - MCRAE C ROGER
+        synonyms:
+          - proprietor
+          - landowner
+          - property_owner
+          - owner
+          - landlord
+          - titleholder
+      - name: ZONING
+        expr: ZONING
+        data_type: VARCHAR(16777216)
+        description: Zoning classification of the property, which defines the allowed land uses and development standards.
+        sample_values:
+          - '01'
+          - 4 RER
+        synonyms:
+          - land_use_code
+          - zoning_code
+          - zoning_designation
+          - zoning_classification
+          - land_use_zoning
+          - zoning_type
+          - zoning_category
+      - name: TAXAMOUNT
+        expr: TAXAMOUNT
+        data_type: VARCHAR(16777216)
+        description: The amount of taxes paid or owed on a property.
+        sample_values:
+          - '905.51'
+          - '68.0'
+          - '1448.54'
+        synonyms:
+          - tax
+          - property_tax
+          - tax_value
+          - assessment_amount
+          - levy_amount
+verified_queries:
+  - name: Unique Agricultural Land Records
+    question: Retrieves the count of unique agricultural land records
+    use_as_onboarding_question: true
+    sql: SELECT COUNT(DISTINCT PRIMARYADDRESS) AS unique_agricultural_land_records FROM CORTEX_AGENT_DB.CORTEX_AGENT_SCHEMA.PROPERTY_DATA_VIEW WHERE LANDUSECODE IN ('137.0', '200.0')
+    verified_by: cortexanalyst openai
+    verified_at: 1741094963
+custom_instructions: If the user asks about agricultural land, use the LANDUSECODE column where values are '137.0' or '200.0'. To count unique records, use DISTINCT PRIMARYADDRESS

@@ -1,0 +1,312 @@
+import _snowflake
+import json
+import streamlit as st
+import time
+import json
+import pandas as pd
+import requests
+import matplotlib.pyplot as plt
+import plotly.express as px
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+from snowflake.snowpark.context import get_active_session
+
+
+DATABASE = "CORTEX_LAB_DB"
+SCHEMA = "CORTEX_LAB_SCHEMA"
+STAGE = "CORTEX_STAGE"
+FILE = "book_model.yaml"
+
+def send_message(prompt: str) -> dict:
+    """Calls the REST API and returns the response."""
+    request_body = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+            }
+        ],
+        "semantic_model_file": f"@{DATABASE}.{SCHEMA}.{STAGE}/{FILE}",
+    }
+    resp = _snowflake.send_snow_api_request(
+        "POST",
+        f"/api/v2/cortex/analyst/message",
+        {},
+        {},
+        request_body,
+        {},
+        30000,
+    )
+    if resp["status"] < 400:
+        return json.loads(resp["content"])
+    else:
+        raise Exception(
+            f"Failed request with status {resp['status']}: {resp}"
+        )
+
+
+
+def check_mixed_types(df: pd.DataFrame) -> bool:
+    """Check for mixed types in the DataFrame columns and return True if any are found."""
+    for col in df.columns:
+        if df[col].apply(type).nunique() > 1:
+            return True
+    return False
+
+def suggest_chart_type(df: pd.DataFrame) -> Dict[str, str]:
+    """Suggest chart types based on the data types available in the DataFrame."""
+    chart_options = {}
+    numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
+    categorical_columns = df.select_dtypes(include=['object']).columns.tolist()
+    date_columns = df.select_dtypes(include=['datetime64']).columns.tolist()
+
+    if len(df.columns) == 1:
+        chart_options = {"Table View 📋": "table"}
+    elif len(df.columns) == 3 and "START_DATE" in df.columns and "END_DATE" in df.columns:
+        chart_options = {"Bar Chart 📊": "bar"}
+    else:
+        if numeric_columns and categorical_columns:
+            chart_options = {
+                "Bar Chart 📊": "bar",
+                "Line Chart 📈": "line",
+                "Area Chart 🌐": "area",
+                "Pie Chart 🥧": "pie",
+                "Box Plot 📦": "box",
+                "Scatter Plot 🔵": "scatter",
+                "Violin Plot 🎻": "violin",
+                "Density Heatmap 🌡️": "density_heatmap",
+                "Sunburst Chart 🌞": "sunburst",
+                "Treemap 🌳": "treemap",
+                "Funnel Plot 🚥": "funnel",
+            }
+        elif numeric_columns:
+            chart_options = {
+                "Line Chart 📈": "line",
+                "Area Chart 🌐": "area",
+                "Histogram 📊": "histogram",
+                "Box Plot 📦": "box",
+                "Violin Plot 🎻": "violin",
+            }
+        elif categorical_columns or date_columns:
+            chart_options = {
+                "Pie Chart 🥧": "pie",
+                "Bar Chart 📊": "bar",
+                "Sunburst Chart 🌞": "sunburst",
+                "Treemap 🌳": "treemap",
+            }
+        else:
+            chart_options = {"Table View 📋": "table"}
+
+    return chart_options
+
+def rearrange_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Rearrange START_DATE and END_DATE columns and ensure no commas in year display."""
+    date_columns = ["START_DATE", "END_DATE"]
+    
+    # Convert the date columns to integers or strings to remove commas
+    for col in date_columns:
+        if col in df.columns:
+            df[col] = df[col].astype(str)  # Ensure it's treated as a string, preventing formatting with commas
+    
+    other_columns = [col for col in df.columns if col not in date_columns]
+    rearranged_columns = other_columns + [col for col in date_columns if col in df.columns]
+    return df[rearranged_columns]
+
+
+def display_content(content: list, message_index: int = None) -> None:
+    """Displays a content item for a message."""
+    message_index = message_index or len(st.session_state.messages)
+    for item in content:
+        if item["type"] == "text":
+            st.markdown(item["text"])
+        elif item["type"] == "suggestions":
+            with st.expander("Suggestions", expanded=True):
+                for suggestion_index, suggestion in enumerate(item["suggestions"]):
+                    if st.button(suggestion, key=f"{message_index}_{suggestion_index}"):
+                        st.session_state.active_suggestion = suggestion
+        elif item["type"] == "sql":
+            with st.expander("SQL Query", expanded=False):
+                st.code(item["statement"], language="sql")
+            with st.expander("Results", expanded=True):
+                with st.spinner("Running SQL..."):
+                    session = get_active_session()
+                    df = session.sql(item["statement"]).to_pandas()
+
+                    if not df.empty:
+                        if len(df) == 1 and len(df.columns) == 1:
+                            # If only one row and one column are present, show only the Table View
+                            st.dataframe(df)
+                        elif len(df.columns) > 1 and len(df) == 1:
+                            # One row and multiple columns: Provide Table View and Chart View (Bar Chart Only)
+                            view_options = ["Table View", "Chart View"]
+                            view_type = st.selectbox(
+                                "Select View Type",
+                                options=view_options,
+                                index=1,  # Default to Table View
+                                key=f"one_row_multi_col_view_type_{message_index}"
+                            )
+                            
+                            if view_type == "Table View":
+                                st.dataframe(df)
+                            elif view_type == "Chart View":
+                                # Show another dropdown to select the chart type
+                                chart_options = ["Bar Chart"]
+                                selected_chart = st.selectbox(
+                                    "Select Chart Type",
+                                    options=chart_options,
+                                    index=0,  
+                                    key=f"chart_type_{message_index}"
+                                )
+                                
+                                if selected_chart == "Bar Chart":
+                                    st.bar_chart(df.set_index(df.columns[0])[df.columns[1]])
+                        else:
+                            df = rearrange_columns(df)
+
+                            view_type = st.selectbox(
+                                "Select View Type",
+                                options=["Table View", "Chart View"],
+                                index=1,
+                                key=f"view_type_{message_index}"
+                            )
+    
+                            if view_type == "Table View":
+                                st.dataframe(df)
+                            elif view_type == "Chart View":
+                                chart_options = suggest_chart_type(df)
+                                selected_chart = st.selectbox(
+                                    "Choose chart type:",
+                                    list(chart_options.keys()),
+                                    key=f"chart_select_{message_index}"
+                                )
+                                    
+                                # Determine how to plot based on the suggested chart type
+                                numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
+                                categorical_columns = df.select_dtypes(include=['object']).columns.tolist()
+                                
+                                if numeric_columns and categorical_columns:
+                                        x_column = categorical_columns[0]
+                                        y_column = numeric_columns[0]
+                                        if chart_options[selected_chart] == "bar":
+                                            st.bar_chart(df.set_index(x_column)[y_column])
+                                        elif chart_options[selected_chart] == "line":
+                                            st.line_chart(df.set_index(x_column)[y_column])
+                                        elif chart_options[selected_chart] == "area":
+                                            st.area_chart(df.set_index(x_column)[y_column])
+                                        elif chart_options[selected_chart] == "pie":
+                                            fig, ax = plt.subplots()
+                                            df.set_index(x_column)[y_column].plot.pie(autopct="%1.1f%%", ax=ax)
+                                            ax.set_ylabel('')
+                                            st.pyplot(fig)
+                                        elif chart_options[selected_chart] == "box":
+                                            fig = px.box(df, x=x_column, y=y_column)
+                                            st.plotly_chart(fig)
+                                        elif chart_options[selected_chart] == "scatter":
+                                            fig = px.scatter(df, x=x_column, y=y_column)
+                                            st.plotly_chart(fig)
+                                        elif chart_options[selected_chart] == "violin":
+                                            fig = px.violin(df, x=x_column, y=y_column)
+                                            st.plotly_chart(fig)
+                                        elif chart_options[selected_chart] == "density_heatmap":
+                                            fig = px.density_heatmap(df, x=x_column, y=y_column)
+                                            st.plotly_chart(fig)
+                                        elif chart_options[selected_chart] == "sunburst" and len(categorical_columns) > 1:
+                                            fig = px.sunburst(df, path=[x_column, categorical_columns[1]])
+                                            st.plotly_chart(fig)
+                                        elif chart_options[selected_chart] == "treemap" and len(categorical_columns) > 1:
+                                            fig = px.treemap(df, path=[x_column, categorical_columns[1]])
+                                            st.plotly_chart(fig)
+                                        else:
+                                            st.warning(f"{selected_chart} not suitable for this data. Please choose another chart type.")
+
+                                elif numeric_columns:
+                                        y_column = numeric_columns[0]
+                                        if chart_options[selected_chart] == "line":
+                                            st.line_chart(df[y_column])
+                                        elif chart_options[selected_chart] == "area":
+                                            st.area_chart(df[y_column])
+                                        elif chart_options[selected_chart] == "box":
+                                            fig = px.box(df, y=y_column)
+                                            st.plotly_chart(fig)
+                                        elif chart_options[selected_chart] == "scatter":
+                                            fig = px.scatter(df, y=y_column)
+                                            st.plotly_chart(fig)
+                                        elif chart_options[selected_chart] == "violin":
+                                            fig = px.violin(df, y=y_column)
+                                            st.plotly_chart(fig)
+                                        elif chart_options[selected_chart] == "density_heatmap":
+                                            fig = px.density_heatmap(df, y=y_column)
+                                            st.plotly_chart(fig)
+                                        elif chart_options[selected_chart] == "funnel":
+                                            fig = px.funnel(df, y=y_column)
+                                            st.plotly_chart(fig)
+                                        else:
+                                            st.warning(f"{selected_chart} not suitable for this data. Please choose another chart type.")
+                                elif categorical_columns:
+                                        x_column = categorical_columns[0]
+                                        if chart_options[selected_chart] == "bar":
+                                            st.bar_chart(df[x_column])
+                                        elif chart_options[selected_chart] == "pie":
+                                            fig, ax = plt.subplots()
+                                            df[categorical_columns[0]].value_counts().plot.pie(autopct="%1.1f%%", ax=ax)
+                                            ax.set_ylabel('')
+                                            st.pyplot(fig)
+                                        elif chart_options[selected_chart] == "sunburst" and len(categorical_columns) > 1:
+                                            fig = px.sunburst(df, path=categorical_columns)
+                                            st.plotly_chart(fig)
+                                        elif chart_options[selected_chart] == "treemap" and len(categorical_columns) > 1:
+                                            fig = px.treemap(df, path=categorical_columns)
+                                            st.plotly_chart(fig)
+                                        else:
+                                            st.warning(f"{selected_chart} charts require hierarchical data with more than one categorical column. Please choose another chart type.")
+                                
+                                else:
+                                    st.warning("No suitable data available for charting. Please check your data or query for different columns.")
+
+                    else:
+                        st.dataframe(df)
+
+def format_message(role: str, content: str) -> str:
+    """Format message with a timestamp for better chat experience."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    formatted_message = f"**{role.capitalize()} [{timestamp}]:** {content}"
+    return formatted_message
+
+def process_message(prompt: str) -> None:
+    """Processes a message and adds the response to the chat."""
+    st.session_state.messages.append(
+        {"role": "user", "content": [{"type": "text", "text": prompt}]}
+    )
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    with st.chat_message("assistant"):
+        with st.spinner("Generating response..."):
+            response = send_message(prompt=prompt)
+            content = response["message"]["content"]
+            display_content(content=content)
+    st.session_state.messages.append({"role": "assistant", "content": content})
+
+
+st.title("Cortex Analystics")
+st.markdown(f"Semantic Model: {FILE}")
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+    st.session_state.suggestions = []
+    st.session_state.active_suggestion = None
+
+for message_index, message in enumerate(st.session_state.messages):
+    with st.chat_message(message["role"]):
+        display_content(content=message["content"], message_index=message_index)
+
+if user_input := st.chat_input("What is your question?"):
+    process_message(prompt=user_input)
+
+if st.session_state.active_suggestion:
+    process_message(prompt=st.session_state.active_suggestion)
+    st.session_state.active_suggestion = None

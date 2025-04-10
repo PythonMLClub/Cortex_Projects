@@ -1,0 +1,15 @@
+PRIVATE KEY : 
+      openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
+PUBLIC KEY :
+      openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
+
+CHECK PRIVATE KEY :
+      openssl rsa -in C:\Users\User\Documents\snowsql\rsa_key.p8 -check RSA key ok
+
+CHECK PUBLIC KEY :
+      type rsa_key.pub
+
+jwt_token:
+      snowsql -a POB19930 -u CORTEXTOKEN --private-key-path C:/Users/User/Documents/JWT_TOKEN/rsa_key.p8 --generate-jwt
+
+

@@ -1,0 +1,197 @@
+-------------------------- CORTEX SEARCH ----------------------------------------
+
+use role accountadmin;
+
+select current_user();  -- CORTEXSEARCHTOKEN
+
+GRANT ROLE accountadmin TO USER CORTEXSEARCHTOKEN;
+
+
+----------------------db, schema , wh , table, stage ---------------------------------------
+
+-- Grant CREATE DATABASE privilege
+GRANT CREATE DATABASE ON ACCOUNT TO ROLE accountadmin;
+
+-- Grant CREATE WAREHOUSE privilege
+GRANT CREATE WAREHOUSE ON ACCOUNT TO ROLE accountadmin;
+
+-- create demo database
+CREATE OR REPLACE DATABASE CORTEX_SEARCH_DB1;
+
+-- create schema
+CREATE OR REPLACE SCHEMA CORTEX_SEARCH_SCHEMA1;
+
+CREATE OR REPLACE WAREHOUSE compute_wh WITH
+    WAREHOUSE_SIZE='X-SMALL'
+    AUTO_SUSPEND = 120
+    AUTO_RESUME = TRUE
+    INITIALLY_SUSPENDED=TRUE;
+
+USE WAREHOUSE compute_wh;
+
+CREATE OR REPLACE STAGE CORTEX_STAGE1
+    DIRECTORY = (ENABLE = TRUE)
+    ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE');
+
+list @CORTEX_STAGE1;
+
+-----------------------------create funcation---------------------------------
+
+CREATE OR REPLACE FUNCTION pdf_text_chunker(file_url STRING)
+RETURNS TABLE (chunk VARCHAR)
+LANGUAGE PYTHON
+RUNTIME_VERSION = '3.9'
+HANDLER = 'pdf_text_chunker'
+PACKAGES = ('snowflake-snowpark-python', 'PyPDF2', 'langchain')
+AS
+$$
+from snowflake.snowpark import types as T
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from snowflake.snowpark.files import SnowflakeFile
+import PyPDF2, io
+import logging
+
+# Define the PDF text chunker class
+class pdf_text_chunker:
+    
+    def read_pdf(self, file_url: str) -> str:
+        logger = logging.getLogger("udf_logger")
+        logger.info(f"Opening file {file_url}")
+        
+        # Open and read the PDF from the Snowflake stage
+        with SnowflakeFile.open(file_url, 'rb') as f:
+            buffer = io.BytesIO(f.read())
+        
+        # Use PyPDF2 to extract text from the PDF
+        reader = PyPDF2.PdfReader(buffer)
+        text = ""
+        for page in reader.pages:
+            try:
+                text += page.extract_text().replace('\n', ' ').replace('\0', ' ')
+            except:
+                text = "Unable to Extract"
+                logger.warning(f"Unable to extract from file {file_url}, page {page}")
+        
+        return text
+
+    def process(self, file_url: str):
+        # Extract text from the PDF file
+        text = self.read_pdf(file_url)
+        
+        # Split the text into chunks using RecursiveCharacterTextSplitter
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=4000,  # Adjust chunk size as needed
+            chunk_overlap=400,  # Some overlap for better context
+            length_function=len
+        )
+        
+        # Split the extracted text into chunks
+        chunks = text_splitter.split_text(text)
+        
+        # Yield the chunks one by one
+        for chunk in chunks:
+            yield (chunk,)
+
+$$;
+---------------------create chunk table------------------------------------------------
+
+CREATE OR REPLACE TABLE CHUNK_CORTEX_PDF1 (
+    RELATIVE_PATH VARCHAR(16777216), 
+    SIZE NUMBER(38, 0), 
+    FILE_URL VARCHAR(16777216), 
+    SCOPED_FILE_URL VARCHAR(16777216),
+    CHUNK VARCHAR(16777216), 
+    CHUNK_VEC VECTOR(FLOAT, 768) 
+);
+
+select * from CHUNK_CORTEX_PDF1;
+
+INSERT INTO CHUNK_CORTEX_PDF1 (relative_path, size, file_url, scoped_file_url, chunk, chunk_vec)
+    SELECT
+        relative_path,  
+        size,           
+        file_url,       
+        build_scoped_file_url(@CORTEX_STAGE1, relative_path) AS scoped_file_url, 
+        func.chunk AS chunk,  -- Chunk from the pdf_text_chunker function
+        SNOWFLAKE.CORTEX.EMBED_TEXT_768('e5-base-v2', func.chunk) AS chunk_vec 
+    FROM
+        DIRECTORY(@CORTEX_STAGE1) AS dir,  
+        TABLE(pdf_text_chunker(build_scoped_file_url(@CORTEX_STAGE1, dir.relative_path))) AS func;  
+
+
+------------------------cortex search service created--------------------------
+
+
+
+CREATE OR REPLACE CORTEX SEARCH SERVICE CORTEX_SEARCH_DB1.CORTEX_SEARCH_SCHEMA1.PDF_CHUNK_SERVICE
+  ON CHUNK
+  ATTRIBUTES RELATIVE_PATH, FILE_URL, SCOPED_FILE_URL, CHUNK
+  WAREHOUSE = compute_wh
+  TARGET_LAG = '1 hour'
+  AS (
+    SELECT * FROM CHUNK_CORTEX_PDF1
+  );
+
+----------------------------testing query ---------------------------------
+
+SELECT PARSE_JSON(
+  SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
+      'CORTEX_SEARCH_DB1.CORTEX_SEARCH_SCHEMA1.PDF_CHUNK_SERVICE',
+      '{
+         "query": "Explain Oncology",
+         "columns":[
+            "CHUNK",
+            "RELATIVE_PATH",
+            "FILE_URL"
+         ],
+         "filter": {"@eq": {"RELATIVE_PATH": "Cardiology_Comprehensive_Overview.pdf"}},
+         "limit": 5
+      }'
+  )
+)['results'] AS results;
+
+------------------------------------------------------------------------------------------------------------------------------------
+
+
+ALTER USER CORTEXSEARCHTOKEN SET RSA_PUBLIC_KEY='MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArNf3ooEymKYqPbEgo527
+lpZc13NW05gh5cnV275gCKuoFYJCYTQcoQBIK7knYip00EOOBSp0hQBoQ7E9Xli4
+6IPQckTVcSI4omRfbUzS8lGcKRwXaM2UQGtxNCbTla256F05pr/zH9J58a5R85c1
+CW1NAMeUcVzqXqZQaRG42sE/uYYZ4aSCeERxTvJ9ZupiFa0kZFtrbEWENeiQvAvt
+XgxuElyBh1zF2z31doJlam3MsA+coVISYwj0a+1jtTqFNArQkRtbQNWwJONuVgyW
+xzHdSraF37/O+JJUilj7Kv/D2IEsCs/TRIGi/T7V+/yLeZrCQH3L56GKBfhJro+1
+aQIDAQAB';
+
+
+DESC USER CORTEXSEARCHTOKEN;
+SELECT SUBSTR((SELECT "value" FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()))
+  WHERE "property" = 'RSA_PUBLIC_KEY_FP'), LEN('SHA256:') + 1);           -- l0hKMVDy0FTIAp76wCd34Hd3/K9tuXAjh4JI2Y6NpT4=
+
+
+SHOW USERS LIKE 'CORTEXSEARCHTOKEN';
+
+----------------- Postman -------------------
+
+Call URL:
+https://tufbwjl-qeb33118.snowflakecomputing.com/api/v2/databases/CORTEX_SEARCH_DB1/schemas/CORTEX_SEARCH_SCHEMA1/cortex-search-services/PDF_CHUNK_SERVICE:query
+
+JWT:
+snowsql -a akb21464 -u CORTEXSEARCHTOKEN --private-key-path ./rsa_key.p8 --generate-jwt
+
+{
+  "query": "Explain Oncology",
+  "columns": [
+	"CHUNK",
+	"RELATIVE_PATH",
+	"FILE_URL"
+  ],
+  "filter": {"@eq": {"RELATIVE_PATH": "Cardiology_Comprehensive_Overview.pdf"}
+  },
+  "limit": 5,
+  "experimental": {
+	"ut4": true,
+	"dolore3": 37155695.962142885,
+	"incididuntbb9": -80406148
+  }
+}
+
+----------------- Postman -------------------

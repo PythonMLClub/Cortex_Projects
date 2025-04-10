@@ -1,0 +1,34 @@
+
+***************************************************************
+
+How many records have an acre size of 1 or more?
+How many records belong to rural areas (where rural_flag = 1) in the farm data?
+how many agricultural land records?
+How many farms have livestock available in our database?
+What is the total number of agricultural properties in the property data?
+How many farms have both a valid address and phone number?
+What is the total number of records with a Landline or Phone?
+What is the total number of unique records with either a landline or mobile?
+How many businesses are currently active, closed, or pending?
+What are the top 10 highest revenue-generating businesses?
+How many records have a 100% address?
+How many records have crops?
+Show all farms that grow barley and also have livestock?
+What is the distribution of different crops across states?
+Show the cities with the most farms?
+
+What is the valid email count by state?
+What is the total number of records with Mobile?
+how many farms with confirmed addresses , what is the average total farm exact acres?
+What is the distribution of farms with available addresses across different states ?
+How many farms have complete address?
+How many records belong to non-metro areas?
+
+How many properties have different primary and mailing addresses in the property table?
+How many records in property have non-matching primaryaddress and mailingaddress fields?
+What is the count of properties where the primaryaddress field differs from the mailingaddress field in the property table?
+What is the total number of contacts with emails?
+What is the total number of unique businesses?
+What is the total number of all contacts?
+How many records have crops?
+How many records have livestock?

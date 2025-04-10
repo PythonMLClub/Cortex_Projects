@@ -1,0 +1,114 @@
+-------------------------------------------------------------------------------------------
+**********************************CORTEX ANALYST******************************************
+-------------------------------------------------------------------------------------------
+
+-- Use Stage CORTEX_ANALYST_STAGE for Cortex Analyst
+-- Edit the yaml file to reflect the new table name;
+
+LIST @CORTEX_ANALYST_STAGE;
+LIST @CORTEX_TOKEN_DB.CORTEX_TOKEN_SCHEMA.CORTEX_ANALYST_STAGE/book_model.yaml;
+--------------------------------Create Table---------------------------------------------
+
+CREATE OR REPLACE TABLE CORTEX_TOKEN_DB.CORTEX_TOKEN_SCHEMA.MEDICAL_BOOKS (
+    TITLE STRING,
+    AUTHORS STRING,
+    DESCRIPTION STRING,
+    CATEGORY STRING,
+    PUBLISHER STRING,
+    PRICE_STARTING_WITH FLOAT,
+    PUBLISH_DATE_MONTH STRING,
+    PUBLISH_DATE_YEAR INT
+);
+
+
+COPY INTO CORTEX_TOKEN_DB.CORTEX_TOKEN_SCHEMA.MEDICAL_BOOKS
+FROM @CORTEX_ANALYST_STAGE/Medical_books_clean.csv
+FILE_FORMAT = (
+    TYPE = 'CSV',
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"',
+    SKIP_HEADER = 1,
+    FIELD_DELIMITER = ',',
+    NULL_IF = ('')
+)
+ON_ERROR = CONTINUE;
+
+-- Edit the yaml file to reflect the new table name
+
+SELECT * FROM MEDICAL_BOOKS;
+
+--------------------------------Updating User Configuration-------------------------------------------------------
+
+SHOW USERS LIKE 'CORTEXTOKEN';
+
+DESC USER CORTEXTOKEN;
+
+ALTER USER CORTEXTOKEN SET RSA_PUBLIC_KEY='MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAralNiQ+zpQD8YmmVVGg9
+bYBeVjB7JLFOrUXF4vzB9LkCNVCUowSOIQbb1qmcAlG9av5ldz2Lc/bBWtegDNrv
+oxq2z1fXJ/6gRNIdCB/RAGAhp+BqpXbdkRjRSudUyfCMHQ121zBCfvUX/msRGL3H
+7bHvHqmrpaEKYCWW19kapTVwh8jh4q64b4dnS3PtcsH+J5FYtPzDkxMEfb5lSQPB
+6bbk5rGE28TWqzBeHT9V+f5wAUuT8x0J1KwZLvr4Li5RHQDIcgMjCnlPi9O1LoJ2
+JYizVSgn3MJrDIx0lzpIak2ajgHEIMVWcCrfhBXUwzi07m10wa73NGaAmRRuTZh5
+rwIDAQAB';
+
+
+---------------------------------Generating a JWT Token Using snowsql-----------------------------------
+JWT:
+snowsql -a POB19930 -u CORTEXTOKEN --private-key-path C:/Users/User/Documents/JWT_TOKEN/rsa_key.p8 --generate-jwt
+
+---------------------------------------Check PostMan------------------------------------------
+
+Call URL:
+https://POB19930.snowflakecomputing.com/api/v2/cortex/analyst/message
+
+Header:
+"Content-Type"                         : "application/json",
+"X-Snowflake-Authorization-Token-Type" :"KEYPAIR_JWT"
+
+Body:
+{
+  "messages": [
+    {
+      "content": [
+        {
+          "type": "text",
+          "text": "show top 10 most common categories of scientific books?"
+        }
+      ],
+      "role": "user"
+    }
+  ],
+  "semantic_model_file": "@CORTEX_TOKEN_DB.CORTEX_TOKEN_SCHEMA.CORTEX_ANALYST_STAGE/book_model.yaml",
+  "stream": false
+}
+
+------------------------------------------------------------------------------------------------------------------
+
+{
+  "messages": [
+    {
+      "content": [
+        {
+          "type": "sql"
+        },
+        {
+          "type": "sql"
+        }
+      ],
+      "role": "user"
+    },
+    {
+      "content": [
+        {
+          "type": "suggestions"
+        },
+        {
+          "type": "sql"
+        }
+      ],
+      "role": "user"
+    }
+  ],
+  "semantic_model_file": "<string>",
+  "semantic_model": "<string>",
+  "stream": false
+}

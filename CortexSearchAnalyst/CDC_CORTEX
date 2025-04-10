@@ -1,0 +1,235 @@
+-----------------------------------------------------------------------------------------
+**********************************CORTEX SEARCH******************************************
+-----------------------------------------------------------------------------------------
+
+USE ROLE CORTEX_LAB;
+USE WAREHOUSE CORTEX_LAB_WH;
+USE DATABASE CORTEX_LAB_DB;
+USE SCHEMA CORTEX_LAB_SCHEMA;
+
+----------------------------------------------------------------------------
+-- Use Stage CORTEX_SEARCHSTAGE for Cortex Search
+
+List @CORTEX_SEARCHSTAGE
+-----------------------------Create Funcation---------------------------------
+
+CREATE OR REPLACE FUNCTION pdf_text_chunker_username(file_url STRING)
+RETURNS TABLE (chunk VARCHAR)
+LANGUAGE PYTHON
+RUNTIME_VERSION = '3.9'
+HANDLER = 'pdf_text_chunker'
+PACKAGES = ('snowflake-snowpark-python', 'PyPDF2', 'langchain')
+AS
+$$
+from snowflake.snowpark import types as T
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from snowflake.snowpark.files import SnowflakeFile
+import PyPDF2, io
+import logging
+
+# Define the PDF text chunker class
+class pdf_text_chunker:
+    
+    def read_pdf(self, file_url: str) -> str:
+        logger = logging.getLogger("udf_logger")
+        logger.info(f"Opening file {file_url}")
+        
+        # Open and read the PDF from the Snowflake stage
+        with SnowflakeFile.open(file_url, 'rb') as f:
+            buffer = io.BytesIO(f.read())
+        
+        # Use PyPDF2 to extract text from the PDF
+        reader = PyPDF2.PdfReader(buffer)
+        text = ""
+        for page in reader.pages:
+            try:
+                text += page.extract_text().replace('\n', ' ').replace('\0', ' ')
+            except:
+                text = "Unable to Extract"
+                logger.warning(f"Unable to extract from file {file_url}, page {page}")
+        
+        return text
+
+    def process(self, file_url: str):
+        # Extract text from the PDF file
+        text = self.read_pdf(file_url)
+        
+        # Split the text into chunks using RecursiveCharacterTextSplitter
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=4000,  # Adjust chunk size as needed
+            chunk_overlap=400,  # Some overlap for better context
+            length_function=len
+        )
+        
+        # Split the extracted text into chunks
+        chunks = text_splitter.split_text(text)
+        
+        # Yield the chunks one by one
+        for chunk in chunks:
+            yield (chunk,)
+
+$$;
+
+---------------------Create PdfChunk Table------------------------------------------------
+
+CREATE OR REPLACE TABLE CHUNK_CORTEX_PDF_USERNAME (
+    RELATIVE_PATH VARCHAR(16777216), -- Relative path to the PDF file
+    SIZE NUMBER(38, 0), -- Size of the PDF
+    FILE_URL VARCHAR(16777216), -- URL for the PDF
+    SCOPED_FILE_URL VARCHAR(16777216), -- Scoped URL
+    CHUNK VARCHAR(16777216), -- Text chunk from the PDF
+    CHUNK_VEC VECTOR(FLOAT, 768) -- Embedding vector for the text chunk
+);
+
+---------------------Insert PdfChunk Table------------------------------------------------
+
+INSERT INTO CHUNK_CORTEX_PDF_USERNAME (relative_path, size, file_url, scoped_file_url, chunk, chunk_vec)
+    SELECT
+        relative_path,  
+        size,           
+        file_url,       
+        build_scoped_file_url(@CORTEX_SEARCHSTAGE, relative_path) AS scoped_file_url, 
+        func.chunk AS chunk, 
+        SNOWFLAKE.CORTEX.EMBED_TEXT_768('e5-base-v2', func.chunk) AS chunk_vec 
+    FROM
+        DIRECTORY(@CORTEX_SEARCHSTAGE) AS dir, 
+        TABLE(pdf_text_chunker_username(build_scoped_file_url(@CORTEX_SEARCHSTAGE, dir.relative_path))) AS func;  
+        
+
+SELECT * FROM CHUNK_CORTEX_PDF_USERNAME;
+
+------------------------------Create Stream---------------------------------------------------
+
+CREATE OR REPLACE STREAM chunk_cortex_pdf_stream
+ON TABLE CORTEX_LAB_DB.CORTEX_LAB_SCHEMA.CHUNK_CORTEX_PDF_USERNAME
+SHOW_INITIAL_ROWS = TRUE;
+
+
+SELECT * FROM chunk_cortex_pdf_stream;
+
+---------------------------------Create Task-----------------------------------------------
+
+CREATE OR REPLACE TASK cortex_pdf_chunk_cdc_task
+WAREHOUSE = CORTEX_LAB_WH
+SCHEDULE = '1 minute'  -- This runs the task every minute (adjust as necessary)
+AS
+BEGIN
+    -- Insert new or updated rows from the stream into the table
+    INSERT INTO CORTEX_LAB_DB.CORTEX_LAB_SCHEMA.CHUNK_CORTEX_PDF_USERNAME (relative_path, size, file_url, scoped_file_url, chunk, chunk_vec)
+    SELECT relative_path, size, file_url, scoped_file_url, chunk, chunk_vec
+    FROM chunk_cortex_pdf_stream
+    WHERE METADATA$ACTION = 'INSERT' OR METADATA$ACTION = 'UPDATE';
+
+    -- Optionally handle DELETE actions (if needed for your use case)
+    DELETE FROM CORTEX_LAB_DB.CORTEX_LAB_SCHEMA.CHUNK_CORTEX_PDF_USERNAME
+    WHERE EXISTS (
+        SELECT 1 FROM chunk_cortex_pdf_stream
+        WHERE METADATA$ACTION = 'DELETE'
+        AND chunk_cortex_pdf_stream.relative_path = CHUNK_CORTEX_PDF_USERNAME.relative_path
+    );
+END;
+
+----------------------------------------------------------------------------
+
+ALTER TASK cortex_pdf_chunk_cdc_task RESUME;
+
+------------------------Create Cortex Search Service -------------------------
+
+
+CREATE OR REPLACE CORTEX SEARCH SERVICE CORTEX_LAB_DB.CORTEX_LAB_SCHEMA.PDF_CHUNK_SERVICE_USERNAME
+  ON CHUNK
+  ATTRIBUTES RELATIVE_PATH, FILE_URL, SCOPED_FILE_URL, CHUNK
+  WAREHOUSE = CORTEX_LAB_WH
+  TARGET_LAG = '1 hour'
+  AS (
+    SELECT * FROM CHUNK_CORTEX_PDF_USERNAME
+  );
+
+
+----------------------------WITH FLITER TESTING QUERY---------------------------------
+
+SELECT PARSE_JSON(
+  SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
+      'CORTEX_LAB_DB.CORTEX_LAB_SCHEMA.PDF_CHUNK_SERVICE_USERNAME',
+      '{
+         "query": "Explain Oncology",
+         "columns":[
+            "CHUNK",
+            "RELATIVE_PATH",
+            "FILE_URL"
+         ],
+         "filter": {"@eq": {"RELATIVE_PATH": "Cardiology_Comprehensive_Overview.pdf"}},
+         "limit": 5
+      }'
+  )
+)['results'] AS results;
+
+---------------------------------WITHOUT FLITER TESTING QUERY----------------------------
+
+SELECT PARSE_JSON(
+  SNOWFLAKE.CORTEX.SEARCH_PREVIEW(
+      'CORTEX_LAB_DB.CORTEX_LAB_SCHEMA.PDF_CHUNK_SERVICE_USERNAME',
+      '{
+         "query": "Explain Oncology",
+         "columns":[
+            "CHUNK",
+            "RELATIVE_PATH",
+            "FILE_URL"
+         ],
+         "limit": 5
+      }'
+  )
+)['results'] AS results;
+
+-----------------------------------------------------------------------------------------
+
+
+-------------------------------------------------------------------------------------------
+**********************************CORTEX ANALYST******************************************
+-------------------------------------------------------------------------------------------
+
+-- Use Stage CORTEX_ANALYSTSTAGE for Cortex Analyst
+-- Edit the yaml file to reflect the new table name
+
+list @CORTEX_ANALYSTSTAGE;
+
+--------------------------------Create Table---------------------------------------------
+
+CREATE OR REPLACE TABLE CORTEX_LAB_DB.CORTEX_LAB_SCHEMA.MEDICAL_BOOKS_USERNAME (
+    TITLE STRING,
+    AUTHORS STRING,
+    DESCRIPTION STRING,
+    CATEGORY STRING,
+    PUBLISHER STRING,
+    PRICE_STARTING_WITH FLOAT,
+    PUBLISH_DATE_MONTH STRING,
+    PUBLISH_DATE_YEAR INT
+);
+
+
+COPY INTO CORTEX_LAB_DB.CORTEX_LAB_SCHEMA.MEDICAL_BOOKS_USERNAME
+FROM @CORTEX_ANALYSTSTAGE/Medical_books_clean.csv
+FILE_FORMAT = (
+    TYPE = 'CSV',
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"',
+    SKIP_HEADER = 1,
+    FIELD_DELIMITER = ',',
+    NULL_IF = ('')
+)
+ON_ERROR = CONTINUE;
+
+-- Edit the yaml file to reflect the new table name
+
+SELECT * FROM MEDICAL_BOOKS_USERNAME;
+
+--------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+

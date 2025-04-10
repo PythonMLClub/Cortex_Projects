@@ -1,0 +1,142 @@
+name: farm_ca
+tables:
+  - name: FARM_DATA_VIEW
+    base_table:
+      database: CORTEX_AGENT_DB
+      schema: CORTEX_AGENT_SCHEMA
+      table: FARM_DATA_VIEW
+    dimensions:
+      - name: UNIQUEID
+        expr: UNIQUEID
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - '229'
+          - '550'
+          - '571'
+      - name: FARMID
+        expr: FARMID
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - F00000886721
+          - F00000778721
+          - F11000538454
+      - name: NAME_AVAILABLITY_CODE
+        expr: NAME_AVAILABLITY_CODE
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - 'NULL'
+          - '1'
+      - name: TELEPHONE_AVAILABLITY_CODE
+        expr: TELEPHONE_AVAILABLITY_CODE
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - 'NULL'
+          - '1'
+      - name: ADDRESS_AVAILABLITY_CODE
+        expr: ADDRESS_AVAILABLITY_CODE
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - '1'
+      - name: CROP_AVAILABLITY_CODE
+        expr: CROP_AVAILABLITY_CODE
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - '1'
+          - 'NULL'
+      - name: EMAIL_AVAILABLITY_CODE
+        expr: EMAIL_AVAILABLITY_CODE
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - 'NULL'
+          - '1'
+      - name: LIVESTOCK_AVAILABLITY_CODE
+        expr: LIVESTOCK_AVAILABLITY_CODE
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - '1'
+          - 'NULL'
+      - name: CROPS_NAME
+        expr: CROPS_NAME
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - '"CORN'
+          - FORAGE
+      - name: LIVESTOCK_NAME
+        expr: LIVESTOCK_NAME
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - ALFALFA
+          - SHEEP
+          - CATTLE
+      - name: STATE
+        expr: STATE
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - FORAGE
+          - FORAGE"
+          - MA
+      - name: CITY
+        expr: CITY
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - FRUITING AND FLOWERING VEGETABLE
+          - DAIRY
+          - BECKET
+      - name: ZIPCODE
+        expr: ZIPCODE
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - TOBACCO
+          - MA
+          - '1223'
+      - name: LATITUDE
+        expr: LATITUDE
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - MELONS
+          - LANESBOROUGH
+          - '42.3623'
+      - name: LONGITUDE
+        expr: LONGITUDE
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - BARLEY"
+          - '1237'
+          - '73.1505'
+      - name: OWNER_OPERATOR_TYPE
+        expr: OWNER_OPERATOR_TYPE
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - DAIRY
+          - '42.5714'
+      - name: RURAL_FLAG
+        expr: RURAL_FLAG
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - MA
+          - '73.2564'
+          - '1'
+      - name: TOTAL_FARM_EXACT_ACRES
+        expr: TOTAL_FARM_EXACT_ACRES
+        data_type: VARCHAR(16777216)
+        description: ''
+        sample_values:
+          - HADLEY
+          - '9'
